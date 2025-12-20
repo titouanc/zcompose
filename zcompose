@@ -1,0 +1,320 @@
+#!/usr/bin/env python3
+
+import ipaddress
+import logging
+import multiprocessing
+import re
+import subprocess
+
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+
+import yaml
+
+logger = logging.getLogger("zcompose")
+
+
+def run_cmd(cmdline):
+    logger.debug("COMMAND " + " ".join(cmdline))
+    subprocess.check_call(cmdline)
+
+
+def ip_cmd(*cmdline):
+    return run_cmd(["sudo", "ip", *cmdline])
+
+
+@dataclass(frozen=True)
+class EthernetInterface:
+    name: str
+    network_id: str
+    mac: bytes | None = None
+    ipv4: ipaddress.IPv4Interface | None = None
+    ipv6: ipaddress.IPv6Interface | None = None
+
+    def __post_init__(self):
+        assert len(self.mac) == 6
+
+    @property
+    def pretty_mac(self) -> str:
+        return ":".join(map("%02X".__mod__, self.mac))
+
+    @property
+    def pretty_peer_mac(self) -> str:
+        mac = bytes(b + (1 if i == 4 else 0) for i, b in enumerate(self.mac))
+        return ":".join(map("%02X".__mod__, mac))
+
+    def __str__(self) -> str:
+        res = f"({self.network_id}) {self.name} :: [{self.pretty_mac}]"
+        if self.ipv4:
+            res += f" {self.ipv4}"
+        if self.ipv6:
+            res += f" {self.ipv6}"
+        return res
+
+    def tap(self):
+        return Tap(**asdict(self))
+
+    def veth(self):
+        return Veth(**asdict(self))
+
+
+class Tap(EthernetInterface):
+    def up(self, bridge_name: str):
+        logger.info(f"Creating TAP interface {self.name} bridged to {bridge_name}")
+        ip_cmd("tuntap", "add", "dev", self.name, "mode", "tap")
+        if self.mac is not None:
+            ip_cmd("link", "set", self.name, "address", self.pretty_peer_mac)
+        ip_cmd("link", "set", self.name, "up", "master", bridge_name)
+
+    def down(self):
+        logger.info(f"Removing TAP interface {self.name}")
+        ip_cmd("link", "set", self.name, "nomaster", "down")
+        ip_cmd("link", "del", self.name)
+
+
+class Veth(EthernetInterface):
+    def up(self, bridge_name: str):
+        logger.info(f"Creating VETH interface {self.name} bridged to {bridge_name}")
+        peer = self.name + "br"
+        ip_cmd("link", "add", self.name, "type", "veth", "peer", "name", peer)
+        ip_cmd("link", "set", peer, "up", "master", bridge_name)
+        if self.ipv4 is not None:
+            ip_cmd("addr", "add", str(self.ipv4), "dev", self.name)
+        if self.ipv6 is not None:
+            ip_cmd("addr", "add", str(self.ipv6), "dev", self.name)
+        ip_cmd("link", "set", self.name, "up")
+
+    def down(self):
+        logger.info(f"Removing VETH interface {self.name}")
+        ip_cmd("link", "set", self.name, "down")
+        ip_cmd("link", "del", self.name)
+
+@dataclass
+class TapBridgeNetwork:
+    id: str
+    name: str
+    ipv4: ipaddress.IPv4Network
+    ipv6: ipaddress.IPv6Network
+
+    def __post_init__(self):
+        self.taps: list[Tap] = []
+        self.veths: list[Veth] = []
+
+    def mketh(self, ifname: str) -> EthernetInterface:
+        offset = 1 + len(self.taps) + len(self.veths)
+        return EthernetInterface(
+            name=ifname,
+            network_id=self.id,
+            mac=[0x00, 0x00, 0x5e, 0x00, 0x53, offset],
+            ipv4=ipaddress.IPv4Interface(
+                f"{self.ipv4.network_address + offset}/{self.ipv4.prefixlen}"
+            ),
+            ipv6=ipaddress.IPv6Interface(
+                f"{self.ipv6.network_address + offset}/{self.ipv6.prefixlen}"
+            ),
+        )
+
+    def create_tap(self) -> EthernetInterface:
+        tap_number = len(self.taps)
+        tap = self.mketh(f"{self.name}tap{tap_number}").tap()
+        self.taps.append(tap)
+        return tap
+
+    def create_veth(self) -> EthernetInterface:
+        veth_number = len(self.veths)
+        veth = self.mketh(f"{self.name}veth{veth_number}").veth()
+        self.veths.append(veth)
+        return veth
+
+    @property
+    def bridge_name(self):
+        return self.name + "br"
+
+    def up(self):
+        logger.info(f"Creating BRIDGE interface {self.bridge_name}")
+        ip_cmd("link", "add", self.bridge_name, "type", "bridge")
+        ip_cmd("link", "set", self.bridge_name, "up")
+
+        for tap in self.taps:
+            tap.up(self.bridge_name)
+
+        for veth in self.veths:
+            veth.up(self.bridge_name)
+        logger.info(f"Network {self.name} up")
+
+
+    def down(self):
+        logger.info(f"Removing BRIDGE interface {self.bridge_name}")
+        ip_cmd("link", "set", self.bridge_name, "down")
+
+        for veth in self.veths:
+            veth.down()
+
+        for tap in self.taps:
+            tap.down()
+
+        ip_cmd("link", "del", self.bridge_name)
+
+
+@dataclass
+class Application:
+    id: str
+    source: Path
+    board: str = "native_sim"
+    ethernet_if: list[EthernetInterface] = field(default_factory=list)
+    extra_build_args: list[str] = field(default_factory=list)
+
+    @property
+    def output_dir(self) -> Path:
+        return Path("output") / f"{self.id}-{self.board}"
+
+    def get_network_if(self, network_id: str) -> EthernetInterface | None:
+        for iface in self.ethernet_if:
+            if iface.network_id == network_id:
+                return iface
+        return None
+
+    def west(self, *args):
+        return run_cmd(["west", "build", "--build-dir", str(self.output_dir), *args])
+
+    def build(self, pristine: bool = False):
+        self.west(
+            "--board", self.board,
+            str(self.source),
+            *(["--pristine"] if pristine else []),
+            "--",
+            *self.extra_build_args
+        )
+
+    def clean(self):
+        self.west("--target", "clean")
+
+    def run(self):
+        cmdline = [
+            str(self.output_dir / "zephyr" / "zephyr.exe"),
+        ]
+
+        if self.ethernet_if:
+            iface = self.ethernet_if[0]
+            cmdline += [
+                f"--eth-if={iface.name}",
+                f"--mac-addr={iface.pretty_mac}",
+                f"--ipv4-addr={iface.ipv4.ip}",
+                f"--ipv4-nm={iface.ipv4.netmask}",
+            ]
+
+        run_cmd(cmdline)
+
+
+@dataclass
+class Context:
+    networks: dict[str, TapBridgeNetwork]
+    applications: dict[str, Application]
+    name: str | None = None
+
+    @classmethod
+    def parse(self, filename: str):
+        with open(filename) as f:
+            zcomposefile = yaml.safe_load(f)
+
+        networks = {}
+        for net_id, net_cfg in zcomposefile["networks"].items():
+            networks[net_id] = TapBridgeNetwork(
+                id=net_id,
+                name=net_cfg.get("name", net_id),
+                ipv4=ipaddress.ip_network(net_cfg.get("ipv4", "192.0.2.0/24")),
+                ipv6=ipaddress.ip_network(net_cfg.get("ipv6", "2001:db8::/64")),
+            )
+            for i in range(net_cfg.get("host-ifs", 0)):
+                networks[net_id].create_veth()
+
+        applications = {}
+        for app_id, app_cfg in zcomposefile["applications"].items():
+            args = {
+                "id": app_id,
+                "source": Path(app_cfg["source"]),
+                "ethernet_if": [
+                    networks[net].create_tap()
+                    for net in app_cfg.get("networks", [])
+                ],
+            }
+            if "board" in app_cfg:
+                args["board"] = app_cfg["board"]
+            applications[app_id] = Application(**args)
+
+        def substitute_variable(m: re.Match) -> str:
+            target_app_id, net, prop = m.group(1).split(':')
+            iface = applications[target_app_id].get_network_if(net)
+
+            if prop == "ipv4":
+                return str(iface.ipv4.ip)
+            elif prop == "ipv6":
+                return str(iface.ipv6.ip)
+            raise ValueError(f"Unknown property {prop}")
+
+        for app_id, app_cfg in zcomposefile["applications"].items():
+            opts = app_cfg.get("extra-build", {})
+            
+            extra_build_args = opts.get("args", [])
+            for key, value in opts.get("config", {}).items():
+                if isinstance(value, str):
+                    value = f'"{value.replace('"', '\\"')}"'
+                extra_build_args.append(f"-D{key}={value}")
+
+            for arg in extra_build_args:
+                applications[app_id].extra_build_args.append(
+                    re.sub(r"\$\{(.+)\}", substitute_variable, arg)
+                )
+
+        return Context(
+            networks=networks,
+            applications=applications,
+            name=zcomposefile.get("name")
+        )
+
+    def up(self):
+        logger.info(f"Bringing up context {self.name}")
+
+        for net in self.networks.values():
+            net.up()
+
+    def down(self):
+        for net in self.networks.values():
+            net.down()
+
+    def build(self):
+        logger.info(f"Building applications for context {self.name}")
+        multiprocessing.Pool().map(Application.build, self.applications.values())
+
+    def clean(self):
+        logger.info(f"Cleaning applications for context {self.name}")
+        multiprocessing.Pool().map(Application.clean, self.applications.values())
+
+    def run(self):
+        self.build()
+        logger.info(f"Running applications for context {self.name}")
+        multiprocessing.Pool().map(Application.run, self.applications.values())
+
+    def show(self):
+        print(f"Context {self.name}")
+        for app in self.applications.values():
+            print(f" - {app.id} ({app.board} - {app.source})")
+            for iface in app.ethernet_if:
+                print(f"    - {iface}")
+
+
+if __name__ == "__main__":
+    from sys import argv
+    logging.basicConfig(level=logging.DEBUG)
+
+    ctx = Context.parse("ZCompose.yml")
+
+    if len(argv) < 2:
+        print(f"USAGE: {argv[0]} {{up | down}}")
+        exit()
+
+    match (action := argv[1]):
+        case "show"|"up"|"down"|"build"|"clean"|"run":
+            getattr(ctx, action)()
+        case _:
+            print(f"Unknown command {argv[1]}")
