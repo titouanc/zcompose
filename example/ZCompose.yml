@@ -1,0 +1,34 @@
+zephyr-compose-version: 0.1
+
+name: MIDI 2.0 networking samples
+
+networks:
+  # Declare a bridged network with id "zmidi"
+  zmidi:
+    # Basename for network interface
+    name: z 
+    # Number of host veth interfaces to add to the bridge
+    host-ifs: 1
+
+applications:
+  server:
+    # Source code of the zephyr application
+    source: zephyr/samples/net/midi2
+    # Build for native_sim (the default)
+    board: native_sim
+    networks:
+      # Connect to the zmidi network with a TAP adapter
+      - zmidi
+
+  client:
+    source: zephyr/samples/net/midi2_client
+    networks:
+      - zmidi
+    # Extra build arguments
+    extra-build:
+      # Extra kconfigs key:values
+      config:
+        CONFIG_NET_CONFIG_PEER_IPV4_ADDR: ${server:zmidi:ipv4}
+      # Extra build arguments
+      args:
+        - -DCONFIG_NET_CONFIG_PEER_IPV6_ADDR="${server:zmidi:ipv6}"
