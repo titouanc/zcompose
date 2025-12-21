@@ -271,19 +271,6 @@ class Application:
         await arun_cmd(cmdline, name=self.colorize(f"{self.id}"), logfile=logfile)
 
 
-# async def run_process(name, cmd, logfile):
-#     proc = await asyncio.create_subprocess_exec(
-#         *cmd,
-#         stdout=asyncio.subprocess.PIPE,
-#         stderr=asyncio.subprocess.STDOUT,
-#     )
-
-#     async for line in proc.stdout:
-#         logfile.write(f"[{name}] {line.decode()}")
-#         logfile.flush()
-
-#     await proc.wait()
-
 @dataclass
 class Context:
     networks: dict[str, TapBridgeNetwork]
