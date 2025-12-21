@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import yaml
+import tqdm
 
 logger = logging.getLogger("zcompose")
 
@@ -28,14 +29,46 @@ async def arun_cmd(cmdline, logfile: io.TextIOWrapper = sys.stdout, name: str | 
         stderr=asyncio.subprocess.STDOUT,
     )
 
-    prefix = f"{name}| " if name is not None else ""
     async for line in proc.stdout:
-        logfile.write(f"{prefix}{line.decode()}")
+        logfile.write(line.decode().rstrip())
         logfile.flush()
 
     await proc.wait()
     if proc.returncode != 0:
         raise RuntimeError(f"{' '.join(cmdline)} => {proc.returncode}")
+
+
+class TQDMLogWriter:
+    def __init__(self, position: int = 0):
+        self.bar = tqdm.tqdm(position=position)
+
+    def __del__(self):
+        self.bar.close()
+
+    def flush(self):
+        self.bar.refresh()
+
+    def write(self, line: str):
+        if m := re.match(r"^\[(\d+)/(\d+)\] (.+)", line):
+            self.bar.n = int(m.group(1))
+            self.bar.total = int(m.group(2))
+            self.bar.set_description(m.group(3)[:40])
+        else:
+            self.bar.set_description(line[:40])
+
+
+class ColorLogWriter:
+    def __init__(self, app, file=sys.stdout):
+        self.prefix = f"{app.id} | "
+        self.file = file
+        if app.termcolor is not None:
+            self.prefix = f"{app.termcolor}{self.prefix}\033[0m"
+
+    def write(self, line: str):
+        self.file.write(f"{self.prefix}{line}\n")
+
+    def flush(self):
+        self.file.flush()
 
 
 def ip_cmd(*cmdline):
@@ -201,9 +234,10 @@ class Application:
     def colorize(self, text):
         return text if self.termcolor is None else f"{self.termcolor}{text}\033[0m"
 
-    async def build(self, pristine: bool = False):
+    async def build(self, pristine: bool = False, logfile = sys.stdout):
         await arun_cmd(
             name=self.colorize(f"Build {self.id}"),
+            logfile=logfile,
             cmdline=[
                 *self.west_cmd,
                 "--board", self.board,
@@ -214,10 +248,10 @@ class Application:
             ]
         )
 
-    async def clean(self):
-        await arun_cmd([*self.west_cmd, "--target", "clean"])
+    async def clean(self, logfile = sys.stdout):
+        await arun_cmd([*self.west_cmd, "--target", "clean"], logfile=logfile)
 
-    async def run(self):
+    async def run(self, logfile = sys.stdout):
         cmdline = [
             str(self.output_dir / "zephyr" / "zephyr.exe"),
         ]
@@ -231,7 +265,7 @@ class Application:
                 f"--ipv4-nm={iface.ipv4.netmask}",
             ]
 
-        await arun_cmd(cmdline, name=self.colorize(f"{self.id}"))
+        await arun_cmd(cmdline, name=self.colorize(f"{self.id}"), logfile=logfile)
 
 
 # async def run_process(name, cmd, logfile):
@@ -263,8 +297,8 @@ class Context:
             networks[net_id] = TapBridgeNetwork(
                 id=net_id,
                 name=net_cfg.get("name", net_id),
-                ipv4=ipaddress.ip_network(net_cfg.get("ipv4", "192.0.2.0/24")),
-                ipv6=ipaddress.ip_network(net_cfg.get("ipv6", "2001:db8::/64")),
+                ipv4=ipaddress.ip_network(net_cfg.get("ipv4", f"192.0.{2+len(networks)}.0/24")),
+                ipv6=ipaddress.ip_network(net_cfg.get("ipv6", f"2001:{0xdb8 + len(networks):04x}::/64")),
             )
             for i in range(net_cfg.get("host-ifs", 0)):
                 networks[net_id].create_veth()
@@ -327,12 +361,19 @@ class Context:
             net.down()
 
     async def forall_apps(self, func):
-        procs = [func(app) for app in self.applications.values()]
+        procs = [
+            func(app, logfile=ColorLogWriter(app))
+            for app in self.applications.values()
+        ]
         await asyncio.gather(*procs)
 
     async def build(self):
         logger.info(f"Building applications for context {self.name}")
-        await self.forall_apps(Application.build)
+        bars = [TQDMLogWriter(position=i) for i, _ in enumerate(self.applications)]
+        await asyncio.gather(*(
+            app.build(logfile=bars[i])
+            for i, app in enumerate(self.applications.values())
+        ))
 
     async def clean(self):
         logger.info(f"Cleaning applications for context {self.name}")
