@@ -40,7 +40,10 @@ async def arun_cmd(cmdline, logfile: io.TextIOWrapper = sys.stdout, name: str | 
 
 class TQDMLogWriter:
     def __init__(self, position: int = 0):
-        self.bar = tqdm.tqdm(position=position)
+        self.bar = tqdm.tqdm(
+            position=position,
+            bar_format='{l_bar}{bar} {n_fmt}/{total_fmt} [{elapsed}<{remaining}]'
+        )
 
     def __del__(self):
         self.bar.close()
@@ -300,8 +303,8 @@ class Context:
                 ipv4=ipaddress.ip_network(net_cfg.get("ipv4", f"192.0.{2+len(networks)}.0/24")),
                 ipv6=ipaddress.ip_network(net_cfg.get("ipv6", f"2001:{0xdb8 + len(networks):04x}::/64")),
             )
-            for i in range(net_cfg.get("host-ifs", 0)):
-                networks[net_id].create_veth()
+            if net_cfg.get("host-veth"):
+                 networks[net_id].create_veth()
 
         applications = {}
         for i, (app_id, app_cfg) in enumerate(zcomposefile["applications"].items()):
@@ -382,7 +385,10 @@ class Context:
     async def run(self):
         await self.build()
         logger.info(f"Running applications for context {self.name}")
-        await self.forall_apps(Application.run)
+        try:
+            await self.forall_apps(Application.run)
+        except asyncio.exceptions.CancelledError:
+            pass
 
     def show(self):
         print(f"Context {self.name}")

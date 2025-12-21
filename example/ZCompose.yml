@@ -7,8 +7,8 @@ networks:
   zmidi:
     # Basename for network interface
     name: z 
-    # Number of host veth interfaces to add to the bridge
-    host-ifs: 1
+    # Create host veth interfaces linked to the bridge
+    host-veth: true
 
 applications:
   server:
