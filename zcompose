@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
+import asyncio
+import io
 import ipaddress
 import logging
-import multiprocessing
 import re
+import sys
 import subprocess
 
 from dataclasses import asdict, dataclass, field
@@ -17,6 +19,23 @@ logger = logging.getLogger("zcompose")
 def run_cmd(cmdline):
     logger.debug("COMMAND " + " ".join(cmdline))
     subprocess.check_call(cmdline)
+
+
+async def arun_cmd(cmdline, logfile: io.TextIOWrapper = sys.stdout, name: str | None = None):
+    proc = await asyncio.create_subprocess_exec(
+        *cmdline,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+
+    prefix = f"{name}| " if name is not None else ""
+    async for line in proc.stdout:
+        logfile.write(f"{prefix}{line.decode()}")
+        logfile.flush()
+
+    await proc.wait()
+    if proc.returncode != 0:
+        raise RuntimeError(f"{' '.join(cmdline)} => {proc.returncode}")
 
 
 def ip_cmd(*cmdline):
@@ -163,6 +182,7 @@ class Application:
     board: str = "native_sim"
     ethernet_if: list[EthernetInterface] = field(default_factory=list)
     extra_build_args: list[str] = field(default_factory=list)
+    termcolor: str | None = None
 
     @property
     def output_dir(self) -> Path:
@@ -174,22 +194,30 @@ class Application:
                 return iface
         return None
 
-    def west(self, *args):
-        return run_cmd(["west", "build", "--build-dir", str(self.output_dir), *args])
+    @property
+    def west_cmd(self) -> list[str]:
+        return ["west", "build", "--build-dir", str(self.output_dir)]
 
-    def build(self, pristine: bool = False):
-        self.west(
-            "--board", self.board,
-            str(self.source),
-            *(["--pristine"] if pristine else []),
-            "--",
-            *self.extra_build_args
+    def colorize(self, text):
+        return text if self.termcolor is None else f"{self.termcolor}{text}\033[0m"
+
+    async def build(self, pristine: bool = False):
+        await arun_cmd(
+            name=self.colorize(f"Build {self.id}"),
+            cmdline=[
+                *self.west_cmd,
+                "--board", self.board,
+                str(self.source),
+                *(["--pristine"] if pristine else []),
+                "--",
+                *self.extra_build_args
+            ]
         )
 
-    def clean(self):
-        self.west("--target", "clean")
+    async def clean(self):
+        await arun_cmd([*self.west_cmd, "--target", "clean"])
 
-    def run(self):
+    async def run(self):
         cmdline = [
             str(self.output_dir / "zephyr" / "zephyr.exe"),
         ]
@@ -203,8 +231,21 @@ class Application:
                 f"--ipv4-nm={iface.ipv4.netmask}",
             ]
 
-        run_cmd(cmdline)
+        await arun_cmd(cmdline, name=self.colorize(f"{self.id}"))
 
+
+# async def run_process(name, cmd, logfile):
+#     proc = await asyncio.create_subprocess_exec(
+#         *cmd,
+#         stdout=asyncio.subprocess.PIPE,
+#         stderr=asyncio.subprocess.STDOUT,
+#     )
+
+#     async for line in proc.stdout:
+#         logfile.write(f"[{name}] {line.decode()}")
+#         logfile.flush()
+
+#     await proc.wait()
 
 @dataclass
 class Context:
@@ -229,7 +270,9 @@ class Context:
                 networks[net_id].create_veth()
 
         applications = {}
-        for app_id, app_cfg in zcomposefile["applications"].items():
+        for i, (app_id, app_cfg) in enumerate(zcomposefile["applications"].items()):
+            color = (1+i) & 7
+            bold = ((1+i) >> 3) & 1
             args = {
                 "id": app_id,
                 "source": Path(app_cfg["source"]),
@@ -237,6 +280,7 @@ class Context:
                     networks[net].create_tap()
                     for net in app_cfg.get("networks", [])
                 ],
+                "termcolor": f"\033[3{color}{';1' if bold else ''}m",
             }
             if "board" in app_cfg:
                 args["board"] = app_cfg["board"]
@@ -257,7 +301,7 @@ class Context:
             
             extra_build_args = opts.get("args", [])
             for key, value in opts.get("config", {}).items():
-                if isinstance(value, str):
+                if value not in "yn" and isinstance(value, str):
                     value = f'"{value.replace('"', '\\"')}"'
                 extra_build_args.append(f"-D{key}={value}")
 
@@ -282,18 +326,22 @@ class Context:
         for net in self.networks.values():
             net.down()
 
-    def build(self):
+    async def forall_apps(self, func):
+        procs = [func(app) for app in self.applications.values()]
+        await asyncio.gather(*procs)
+
+    async def build(self):
         logger.info(f"Building applications for context {self.name}")
-        multiprocessing.Pool().map(Application.build, self.applications.values())
+        await self.forall_apps(Application.build)
 
-    def clean(self):
+    async def clean(self):
         logger.info(f"Cleaning applications for context {self.name}")
-        multiprocessing.Pool().map(Application.clean, self.applications.values())
+        await self.forall_apps(Application.clean)
 
-    def run(self):
-        self.build()
+    async def run(self):
+        await self.build()
         logger.info(f"Running applications for context {self.name}")
-        multiprocessing.Pool().map(Application.run, self.applications.values())
+        await self.forall_apps(Application.run)
 
     def show(self):
         print(f"Context {self.name}")
@@ -305,7 +353,7 @@ class Context:
 
 if __name__ == "__main__":
     from sys import argv
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=logging.INFO)
 
     ctx = Context.parse("ZCompose.yml")
 
@@ -314,7 +362,9 @@ if __name__ == "__main__":
         exit()
 
     match (action := argv[1]):
-        case "show"|"up"|"down"|"build"|"clean"|"run":
+        case "show"|"up"|"down":
             getattr(ctx, action)()
+        case "build"|"clean"|"run":
+            asyncio.run(getattr(ctx, action)())
         case _:
             print(f"Unknown command {argv[1]}")
