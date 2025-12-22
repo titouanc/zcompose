@@ -332,9 +332,9 @@ class Context:
             
             extra_build_args = opts.get("args", [])
             for key, value in opts.get("config", {}).items():
-                if value not in "yn" and isinstance(value, str):
+                if isinstance(value, str) and value not in "yn":
                     value = f'"{value.replace('"', '\\"')}"'
-                extra_build_args.append(f"-D{key}={value}")
+                extra_build_args.append(f"-DCONFIG_{key}={value}")
 
             for arg in extra_build_args:
                 applications[app_id].extra_build_args.append(
