@@ -24,6 +24,7 @@ def run_cmd(cmdline):
 
 
 async def arun_cmd(cmdline, logfile: io.TextIOWrapper = sys.stdout, name: str | None = None):
+    logger.debug("COMMAND " + " ".join(cmdline))
     proc = await asyncio.create_subprocess_exec(
         *cmdline,
         stdout=asyncio.subprocess.PIPE,
