@@ -4,6 +4,7 @@ import asyncio
 import io
 import ipaddress
 import logging
+import os
 import re
 import sys
 import subprocess
@@ -237,6 +238,13 @@ class Application:
     def colorize(self, text):
         return text if self.termcolor is None else f"{self.termcolor}{text}\033[0m"
 
+    def menuconfig(self):
+        cmdline = [
+            *self.west_cmd,
+            "-t", "menuconfig",
+        ]
+        os.execvp(cmdline[0], cmdline)
+
     async def build(self, pristine: bool = False, logfile = sys.stdout):
         await arun_cmd(
             name=self.colorize(f"Build {self.id}"),
@@ -400,5 +408,7 @@ if __name__ == "__main__":
             getattr(ctx, action)()
         case "build"|"clean"|"run":
             asyncio.run(getattr(ctx, action)())
+        case "menuconfig":
+            ctx.applications[argv[2]].menuconfig()
         case _:
             print(f"Unknown command {argv[1]}")
