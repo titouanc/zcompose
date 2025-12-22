@@ -119,8 +119,6 @@ class Tap(EthernetInterface):
     def up(self, bridge_name: str):
         logger.info(f"Creating TAP interface {self.name} bridged to {bridge_name}")
         ip_cmd("tuntap", "add", "dev", self.name, "mode", "tap")
-        if self.mac is not None:
-            ip_cmd("link", "set", self.name, "address", self.pretty_peer_mac)
         ip_cmd("link", "set", self.name, "up", "master", bridge_name)
 
     def down(self):
