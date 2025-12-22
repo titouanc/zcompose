@@ -295,7 +295,7 @@ class Context:
                 id=net_id,
                 name=net_cfg.get("name", net_id),
                 ipv4=ipaddress.ip_network(net_cfg.get("ipv4", f"192.0.{2+len(networks)}.0/24")),
-                ipv6=ipaddress.ip_network(net_cfg.get("ipv6", f"2001:{0xdb8 + len(networks):04x}::/64")),
+                ipv6=ipaddress.ip_network(net_cfg.get("ipv6", f"2001:db8:{2+len(networks)}::/64")),
             )
             if net_cfg.get("host-veth"):
                  networks[net_id].create_veth()
