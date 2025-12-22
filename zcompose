@@ -386,10 +386,15 @@ class Context:
 
     def show(self):
         print(f"Context {self.name}")
+        print("Applications:")
         for app in self.applications.values():
             print(f" - {app.id} ({app.board} - {app.source})")
             for iface in app.ethernet_if:
                 print(f"    - {iface}")
+        print("Host network interfaces")
+        for net in self.networks.values():
+            for veth in net.veths:
+                print(f"  - {veth}")
 
 
 if __name__ == "__main__":
