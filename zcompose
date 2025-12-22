@@ -329,8 +329,11 @@ class Context:
 
         for app_id, app_cfg in zcomposefile["applications"].items():
             opts = app_cfg.get("extra-build", {})
-            
             extra_build_args = opts.get("args", [])
+
+            for snippet in opts.get("snippets", []):
+                extra_build_args.append(f"-DSNIPPET={snippet}")
+
             for key, value in opts.get("config", {}).items():
                 if isinstance(value, str) and value not in "yn":
                     value = f'"{value.replace('"', '\\"')}"'
