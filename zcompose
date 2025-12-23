@@ -18,12 +18,20 @@ import tqdm
 logger = logging.getLogger("zcompose")
 
 
+def exec_cmd(cmdline):
+    """Execute command, replacing current process"""
+    logger.debug("EXEC " + " ".join(cmdline))
+    os.execvp(cmdline[0], cmdline)
+
+
 def run_cmd(cmdline):
+    """Run command synchronously in subprocess, raise if exitcode != 0"""
     logger.debug("COMMAND " + " ".join(cmdline))
     subprocess.check_call(cmdline)
 
 
 async def arun_cmd(cmdline, logfile: io.TextIOWrapper = sys.stdout, name: str | None = None):
+    """Run command in subprocess, raise if exitcode != 0"""
     logger.debug("COMMAND " + " ".join(cmdline))
     proc = await asyncio.create_subprocess_exec(
         *cmdline,
@@ -253,11 +261,10 @@ class Application:
         return text if self.termcolor is None else f"{self.termcolor}{text}\033[0m"
 
     def menuconfig(self):
-        cmdline = [
-            *self.west_cmd,
-            "-t", "menuconfig",
-        ]
-        os.execvp(cmdline[0], cmdline)
+        exec_cmd([*self.west_cmd, "-t", "menuconfig"])
+
+    def debug(self):
+        exec_cmd(["gdb", "--args", *self.run_args])
 
     async def build(self, pristine: bool = False, logfile = sys.stdout):
         await arun_cmd(
@@ -276,21 +283,23 @@ class Application:
     async def clean(self, logfile = sys.stdout):
         await arun_cmd([*self.west_cmd, "--target", "clean"], logfile=logfile)
 
-    async def run(self, logfile = sys.stdout):
-        cmdline = [
-            str(self.output_dir / "zephyr" / "zephyr.exe"),
-        ]
+    @property
+    def run_args(self) -> list[str]:
+        res = [str(self.output_dir / "zephyr" / "zephyr.exe")]
 
         if self.ethernet_if:
             iface = self.ethernet_if[0]
-            cmdline += [
+            res += [
                 f"--eth-if={iface.name}",
                 f"--mac-addr={iface.pretty_mac}",
                 f"--ipv4-addr={iface.ipv4.ip}",
                 f"--ipv4-nm={iface.ipv4.netmask}",
             ]
 
-        await arun_cmd(cmdline, name=self.colorize(f"{self.id}"), logfile=logfile)
+        return res
+
+    async def run(self, logfile = sys.stdout):
+        await arun_cmd(self.run_args, name=self.colorize(f"{self.id}"), logfile=logfile)
 
 
 @dataclass
@@ -393,17 +402,27 @@ class Context:
                 for i, app in enumerate(self.applications.values())
             ))
 
-    async def clean(self):
-        logger.info(f"Cleaning applications for context {self.name}")
-        await self.forall_apps(Application.clean)
+    async def clean(self, app_id: str | None = None):
+        if app_id is not None:
+            await self.applications[app_id].build()
+        else:
+            logger.info(f"Cleaning applications for context {self.name}")
+            await self.forall_apps(Application.clean)
 
-    async def run(self):
-        await self.build()
-        logger.info(f"Running applications for context {self.name}")
-        try:
-            await self.forall_apps(Application.run)
-        except asyncio.exceptions.CancelledError:
-            pass
+    async def run(self, app_id: str | None = None):
+        await self.build(app_id)
+        if app_id is not None:
+            await self.applications[app_id].run()
+        else:
+            logger.info(f"Running applications for context {self.name}")
+            try:
+                await self.forall_apps(Application.run)
+            except asyncio.exceptions.CancelledError:
+                pass
+
+    async def debug(self, app_id: str):
+        await self.build(app_id)
+        self.applications[app_id].debug()
 
     def show(self):
         print(f"Context {self.name}")
@@ -420,7 +439,7 @@ class Context:
 
 if __name__ == "__main__":
     from sys import argv
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.DEBUG)
 
     ctx = Context.parse("ZCompose.yml")
 
@@ -431,9 +450,9 @@ if __name__ == "__main__":
     match (action := argv[1]):
         case "show"|"up"|"down":
             getattr(ctx, action)()
-        case "build"|"clean"|"run":
-            asyncio.run(getattr(ctx, action)(*argv[2:]))
-        case "menuconfig":
-            ctx.applications[argv[2]].menuconfig()
+        case "build"|"clean"|"run"|"menuconfig"|"debug":
+            func = getattr(ctx, action)
+            if hasattr(proc := func(*argv[2:]), "__await__"):
+                asyncio.run(proc)
         case _:
             print(f"Unknown command {argv[1]}")
