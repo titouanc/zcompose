@@ -32,7 +32,11 @@ async def arun_cmd(cmdline, logfile: io.TextIOWrapper = sys.stdout, name: str | 
     )
 
     async for line in proc.stdout:
-        logfile.write(line.decode().rstrip())
+        try:
+            text = line.decode().rstrip()
+        except UnicodeDecodeError:
+            text = repr(line)
+        logfile.write(text)
         logfile.flush()
 
     await proc.wait()
