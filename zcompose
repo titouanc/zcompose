@@ -33,7 +33,7 @@ async def arun_cmd(cmdline, logfile: io.TextIOWrapper = sys.stdout, name: str | 
 
     async for line in proc.stdout:
         try:
-            text = line.decode().rstrip()
+            text = line.decode()
         except UnicodeDecodeError:
             text = repr(line)
         logfile.write(text)
@@ -45,11 +45,14 @@ async def arun_cmd(cmdline, logfile: io.TextIOWrapper = sys.stdout, name: str | 
 
 
 class TQDMLogWriter:
-    def __init__(self, position: int = 0):
+    DESCRIPTION_WIDTH = 50
+
+    def __init__(self, position: int = 0, name: str | None = None):
         self.bar = tqdm.tqdm(
             position=position,
             bar_format='{l_bar}{bar} {n_fmt}/{total_fmt} [{elapsed}<{remaining}]'
         )
+        self.name = name
 
     def __del__(self):
         self.bar.close()
@@ -57,13 +60,21 @@ class TQDMLogWriter:
     def flush(self):
         self.bar.refresh()
 
+    def set_description(self, text: str):
+        desc = f"{self.name}: {text}" if self.name is not None else text
+        self.bar.set_description(desc[:self.DESCRIPTION_WIDTH].ljust(self.DESCRIPTION_WIDTH))
+
     def write(self, line: str):
         if m := re.match(r"^\[(\d+)/(\d+)\] (.+)", line):
             self.bar.n = int(m.group(1))
             self.bar.total = int(m.group(2))
-            self.bar.set_description(m.group(3)[:40])
+            if m2 := re.match(r"^(Building|Linking) C (?:object|static library) ([\w\d/_\.-]+)", m.group(3)):
+                filename = m2.group(2).split("/")[-1]
+                self.set_description(f"{m2.group(1)} {filename}")
+            else:
+                self.set_description(m.group(3))
         else:
-            self.bar.set_description(line[:40])
+            self.set_description(line.strip())
 
 
 class ColorLogWriter:
@@ -74,7 +85,7 @@ class ColorLogWriter:
             self.prefix = f"{app.termcolor}{self.prefix}\033[0m"
 
     def write(self, line: str):
-        self.file.write(f"{self.prefix}{line}\n")
+        self.file.write(f"{self.prefix}{line}")
 
     def flush(self):
         self.file.flush()
