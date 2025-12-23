@@ -382,13 +382,16 @@ class Context:
         ]
         await asyncio.gather(*procs)
 
-    async def build(self):
-        logger.info(f"Building applications for context {self.name}")
-        bars = [TQDMLogWriter(position=i) for i, _ in enumerate(self.applications)]
-        await asyncio.gather(*(
-            app.build(logfile=bars[i])
-            for i, app in enumerate(self.applications.values())
-        ))
+    async def build(self, app_id: str | None = None):
+        if app_id is not None:
+            await self.applications[app_id].build()
+        else:
+            logger.info(f"Building applications for context {self.name}")
+            bars = [TQDMLogWriter(position=i, name=app_id) for i, app_id in enumerate(self.applications)]
+            await asyncio.gather(*(
+                app.build(logfile=bars[i])
+                for i, app in enumerate(self.applications.values())
+            ))
 
     async def clean(self):
         logger.info(f"Cleaning applications for context {self.name}")
@@ -429,7 +432,7 @@ if __name__ == "__main__":
         case "show"|"up"|"down":
             getattr(ctx, action)()
         case "build"|"clean"|"run":
-            asyncio.run(getattr(ctx, action)())
+            asyncio.run(getattr(ctx, action)(*argv[2:]))
         case "menuconfig":
             ctx.applications[argv[2]].menuconfig()
         case _:
