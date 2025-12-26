@@ -99,12 +99,14 @@ class ColorLogWriter:
         self.file.flush()
 
 
-class UsbIpPortWriter:
+class UsbIpCollector:
+    type PortMap = dict[ipaddress.IPv4Address, int]
+
     IPV4_REGEX = re.compile(r" -> usbip://(\d+\.\d+\.\d+\.\d+):\d+/1-1$")
     USBIP_PORT_REGEX = re.compile(r"^Port (\d+):")
 
     def __init__(self):
-        self.ports: dict[ipaddress.IPv4Address, int] = {}
+        self.ports: self.PortMap = {}
         self.cur_port: int | None = None
 
     def write(self, line: str):
@@ -305,7 +307,7 @@ class Application:
         else:
             logger.debug(f"No USB/IP interface to attach for {self.id}")
 
-    def usbdetach(self, portmap: dict[ipaddress.IPv4Address, int]):
+    def usbdetach(self, portmap: UsbIpCollector.PortMap):
         if (iface := self.default_network_if) and (port := portmap.get(iface.ipv4.ip)) is not None:
             run_cmd(["sudo", "usbip", "detach", "--port", str(port)])
 
@@ -486,8 +488,8 @@ class Context:
             for app in self.applications.values():
                 app.usbdetach(portmap)
 
-    async def list_usbip_ports(self) -> dict[ipaddress.IPv4Address, int]:
-        collector = UsbIpPortWriter()
+    async def list_usbip_ports(self) -> UsbIpCollector.PortMap:
+        collector = UsbIpCollector()
         await arun_cmd(["sudo", "usbip", "port"], logfile=collector)
         return collector.ports
 
