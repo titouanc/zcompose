@@ -99,6 +99,24 @@ class ColorLogWriter:
         self.file.flush()
 
 
+class UsbIpPortWriter:
+    IPV4_REGEX = re.compile(r" -> usbip://(\d+\.\d+\.\d+\.\d+):\d+/1-1$")
+    USBIP_PORT_REGEX = re.compile(r"^Port (\d+):")
+
+    def __init__(self):
+        self.ports: dict[ipaddress.IPv4Address, int] = {}
+        self.cur_port: int | None = None
+
+    def write(self, line: str):
+        if self.cur_port is not None and (m := self.IPV4_REGEX.search(line)):
+            addr = ipaddress.IPv4Address(m.group(1))
+            self.ports[addr] = self.cur_port
+        elif m := self.USBIP_PORT_REGEX.match(line):
+            self.cur_port = int(m.group(1))
+
+    def flush(self):
+        pass
+
 def ip_cmd(*cmdline):
     return run_cmd(["sudo", "ip", *cmdline])
 
@@ -254,8 +272,22 @@ class Application:
         return None
 
     @property
+    def default_network_if(self) -> EthernetInterface | None:
+        return self.ethernet_if[0] if self.ethernet_if else None
+
+    @property
     def west_cmd(self) -> list[str]:
         return ["west", "build", "--build-dir", str(self.output_dir)]
+
+    @property
+    def has_usbip(self) -> bool:
+        cfg = self.output_dir / "zephyr" / ".config"
+        if cfg.is_file():
+            with cfg.open() as f:
+                for line in f:
+                    if line.strip() == "CONFIG_USBIP=y":
+                        return True
+        return False
 
     def colorize(self, text):
         return text if self.termcolor is None else f"{self.termcolor}{text}\033[0m"
@@ -265,6 +297,17 @@ class Application:
 
     def debug(self):
         exec_cmd(["gdb", "--args", *self.run_args])
+
+    def usbattach(self):
+        if (iface := self.default_network_if) and self.has_usbip:
+            logger.info(f"Attaching USB/IP {self.id} ({iface.ipv4.ip})")
+            run_cmd(["sudo", "usbip", "attach", "--remote", str(iface.ipv4.ip), "--busid", "1-1"])
+        else:
+            logger.debug(f"No USB/IP interface to attach for {self.id}")
+
+    def usbdetach(self, portmap: dict[ipaddress.IPv4Address, int]):
+        if (iface := self.default_network_if) and (port := portmap.get(iface.ipv4.ip)) is not None:
+            run_cmd(["sudo", "usbip", "detach", "--port", str(port)])
 
     async def build(self, pristine: bool = False, logfile = sys.stdout):
         await arun_cmd(
@@ -287,8 +330,7 @@ class Application:
     def run_args(self) -> list[str]:
         res = [str(self.output_dir / "zephyr" / "zephyr.exe")]
 
-        if self.ethernet_if:
-            iface = self.ethernet_if[0]
+        if iface := self.default_network_if:
             res += [
                 f"--eth-if={iface.name}",
                 f"--mac-addr={iface.pretty_mac}",
@@ -427,6 +469,36 @@ class Context:
     def menuconfig(self, app_id: str):
         self.applications[app_id].menuconfig()
 
+    def usbattach(self, app_id: str | None = None):
+        if app_id is not None:
+            self.applications[app_id].usbattach()
+        else:
+            logger.info(f"Attaching all USB devices for context {self.name}")
+            for app in self.applications.values():
+                app.usbattach()
+
+    async def usbdetach(self, app_id: str | None = None):
+        portmap = await self.list_usbip_ports()
+        if app_id is not None:
+            self.applications[app_id].usbdetach(portmap)
+        else:
+            logger.info(f"Detaching all USB devices for context {self.name}")
+            for app in self.applications.values():
+                app.usbdetach(portmap)
+
+    async def list_usbip_ports(self) -> dict[ipaddress.IPv4Address, int]:
+        collector = UsbIpPortWriter()
+        await arun_cmd(["sudo", "usbip", "port"], logfile=collector)
+        return collector.ports
+
+    async def usblist(self):
+        usbip = await self.list_usbip_ports()
+
+        for app in self.applications.values():
+            app_addr = app.default_network_if.ipv4.ip
+            if app_addr in usbip:
+                print(f"- {app.id} USB/IP port {usbip[app_addr]} ({app_addr})")
+
     def show(self):
         print(f"Context {self.name}")
         print("Applications:")
@@ -439,10 +511,9 @@ class Context:
             for veth in net.veths:
                 print(f"  - {veth}")
 
-
 if __name__ == "__main__":
     from sys import argv
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=logging.INFO)
 
     ctx = Context.parse("ZCompose.yml")
 
@@ -451,9 +522,7 @@ if __name__ == "__main__":
         exit()
 
     match (action := argv[1]):
-        case "show"|"up"|"down":
-            getattr(ctx, action)()
-        case "build"|"clean"|"run"|"menuconfig"|"debug":
+        case "show"|"up"|"down"|"build"|"clean"|"run"|"menuconfig"|"debug"|"usbattach"|"usblist"|"usbdetach":
             func = getattr(ctx, action)
             if hasattr(proc := func(*argv[2:]), "__await__"):
                 asyncio.run(proc)
