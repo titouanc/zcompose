@@ -424,6 +424,9 @@ class Context:
         await self.build(app_id)
         self.applications[app_id].debug()
 
+    def menuconfig(self, app_id: str):
+        self.applications[app_id].menuconfig()
+
     def show(self):
         print(f"Context {self.name}")
         print("Applications:")
