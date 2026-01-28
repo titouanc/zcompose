@@ -1,5 +1,11 @@
 name: Network echo samples
 
+.common-config: &common-config
+  NET_CONFIG_INIT_TIMEOUT: 3
+  ETH_NATIVE_TAP_RANDOM_MAC: n
+  NET_CONFIG_NEED_IPV6: n
+  NET_IPV6: n
+
 networks:
   zeth:
     host-veth: true
@@ -9,6 +15,9 @@ applications:
     source: samples/net/sockets/echo_server
     networks:
       - zeth
+    extra-build:
+      config:
+        <<: *common-config
 
   client:
     source: samples/net/sockets/echo_client
@@ -16,4 +25,5 @@ applications:
       - zeth
     extra-build:
       config:
+        <<: *common-config
         NET_CONFIG_PEER_IPV4_ADDR: ${server:zeth:ipv4}
