@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zcompose"
+version = "0.1.0"
+description = "Orchestrate multiple Zephyr applications, docker-compose style"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Titouan Christophe" }]
+requires-python = ">=3.11"
+dependencies = [
+    "PyYAML",
+    "tqdm",
+]
+
+[project.scripts]
+zcompose = "zcompose:main"
+
+[tool.setuptools]
+py-modules = ["zcompose"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
