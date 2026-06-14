@@ -23,7 +23,13 @@ jobs:
         python_version: ${matrix.python_version}
 
     - name: Install Python deps & ZCompose
-      run: pip install . pytest
+      run: pip install . pytest ruff
+
+    - name: Check formatting
+      run: ruff  format --check --diff --color always .
+
+    - name: Check linting
+      run: ruff check --diff --color always .
 
     - name: Run tests
       run: pytest tests/
