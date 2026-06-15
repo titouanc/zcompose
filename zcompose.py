@@ -170,7 +170,9 @@ class State:
     networks_up: dict[str, bool] = field(default_factory=dict)
     pids: dict[str, int] = field(default_factory=dict)
     # Serialise concurrent save()s from multiple `run` threads.
-    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
+    _lock: threading.Lock = field(
+        default_factory=threading.Lock, repr=False, compare=False
+    )
 
     @classmethod
     def load(cls, path: Path) -> Self:
@@ -194,7 +196,9 @@ class State:
                 indent=2,
                 sort_keys=True,
             )
-            tmp = self.path.with_name(f"{self.path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+            tmp = self.path.with_name(
+                f"{self.path.name}.{os.getpid()}.{threading.get_ident()}.tmp"
+            )
             tmp.write_text(payload)
             tmp.replace(self.path)
 
@@ -218,7 +222,9 @@ def load_config(path: Path) -> Config:
         raise ConfigError(f"{path}: top-level YAML must be a mapping")
 
     # Allow anchor-only helper keys (those starting with '.') per the full example.
-    raw = {k: v for k, v in raw.items() if not (isinstance(k, str) and k.startswith("."))}
+    raw = {
+        k: v for k, v in raw.items() if not (isinstance(k, str) and k.startswith("."))
+    }
 
     _reject_unknown(raw, _VALID_KEYS_TOP, "<root>", path)
 
@@ -241,7 +247,9 @@ def load_config(path: Path) -> Config:
     )
 
     cfg.networks = _parse_networks(raw.get("networks"), path)
-    cfg.apps = _parse_applications(raw.get("applications"), compose_dir, cfg.networks, path)
+    cfg.apps = _parse_applications(
+        raw.get("applications"), compose_dir, cfg.networks, path
+    )
 
     _allocate(cfg)
     _substitute(cfg)
@@ -272,7 +280,9 @@ def _parse_networks(raw: Any, path: Path) -> dict[str, Network]:
     out: dict[str, Network] = {}
     for nname, nraw in raw.items():
         if not isinstance(nname, str) or not _IDENT_RE.match(nname):
-            raise ConfigError(f"{path}: network name {nname!r} must be a lowercase identifier")
+            raise ConfigError(
+                f"{path}: network name {nname!r} must be a lowercase identifier"
+            )
         if len(nname) > MAX_NET_NAME_LEN:
             raise ConfigError(
                 f"{path}: network name {nname!r} exceeds {MAX_NET_NAME_LEN} characters "
@@ -339,7 +349,9 @@ def _parse_applications(
     out: dict[str, App] = {}
     for aname, araw in raw.items():
         if not isinstance(aname, str) or not _IDENT_RE.match(aname):
-            raise ConfigError(f"{path}: application name {aname!r} must be a lowercase identifier")
+            raise ConfigError(
+                f"{path}: application name {aname!r} must be a lowercase identifier"
+            )
         araw = araw or {}
         if not isinstance(araw, dict):
             raise ConfigError(f"{path}: application {aname!r} must be a mapping")
@@ -359,7 +371,9 @@ def _parse_applications(
         network = araw.get("network")
         if network is not None:
             if not isinstance(network, str):
-                raise ConfigError(f"{path}: applications.{aname}.network must be a string")
+                raise ConfigError(
+                    f"{path}: applications.{aname}.network must be a string"
+                )
             if network not in networks:
                 raise ConfigError(
                     f"{path}: applications.{aname}.network: "
@@ -377,8 +391,12 @@ def _parse_applications(
         eb = araw.get("extra-build") or {}
         if eb:
             if not isinstance(eb, dict):
-                raise ConfigError(f"{path}: applications.{aname}.extra-build must be a mapping")
-            _reject_unknown(eb, _VALID_KEYS_EXTRA_BUILD, f"applications.{aname}.extra-build", path)
+                raise ConfigError(
+                    f"{path}: applications.{aname}.extra-build must be a mapping"
+                )
+            _reject_unknown(
+                eb, _VALID_KEYS_EXTRA_BUILD, f"applications.{aname}.extra-build", path
+            )
             app.extra_build_args = _parse_str_list(
                 eb.get("args"), f"applications.{aname}.extra-build.args", path
             )
@@ -396,8 +414,12 @@ def _parse_applications(
         er = araw.get("extra-run") or {}
         if er:
             if not isinstance(er, dict):
-                raise ConfigError(f"{path}: applications.{aname}.extra-run must be a mapping")
-            _reject_unknown(er, _VALID_KEYS_EXTRA_RUN, f"applications.{aname}.extra-run", path)
+                raise ConfigError(
+                    f"{path}: applications.{aname}.extra-run must be a mapping"
+                )
+            _reject_unknown(
+                er, _VALID_KEYS_EXTRA_RUN, f"applications.{aname}.extra-run", path
+            )
             app.extra_run_args = _parse_str_list(
                 er.get("args"), f"applications.{aname}.extra-run.args", path
             )
@@ -428,7 +450,9 @@ def _parse_config_map(val: Any, where: str, path: Path) -> dict[str, str]:
         elif isinstance(v, (int, str)):
             out[k] = str(v)
         else:
-            raise ConfigError(f"{path}: {where}.{k}: value must be a string, int or bool")
+            raise ConfigError(
+                f"{path}: {where}.{k}: value must be a string, int or bool"
+            )
     return out
 
 
@@ -439,9 +463,15 @@ def _allocate(cfg: Config) -> None:
         if net.host_veth:
             net.host_veth_iface = f"{net.name}-host"
             net.host_bridge_side_iface = f"{net.name}-br"
-        for iface in (net.bridge_iface, net.host_veth_iface, net.host_bridge_side_iface):
+        for iface in (
+            net.bridge_iface,
+            net.host_veth_iface,
+            net.host_bridge_side_iface,
+        ):
             if iface and len(iface) > MAX_IFNAME_LEN:
-                raise ConfigError(f"derived interface {iface!r} exceeds {MAX_IFNAME_LEN} chars")
+                raise ConfigError(
+                    f"derived interface {iface!r} exceeds {MAX_IFNAME_LEN} chars"
+                )
 
     per_net_index: dict[str, int] = {}
     for app in cfg.apps.values():
@@ -453,7 +483,9 @@ def _allocate(cfg: Config) -> None:
 
         app.iface = f"{net.name}tap{idx}"
         if len(app.iface) > MAX_IFNAME_LEN:
-            raise ConfigError(f"derived TAP interface {app.iface!r} exceeds {MAX_IFNAME_LEN} chars")
+            raise ConfigError(
+                f"derived TAP interface {app.iface!r} exceeds {MAX_IFNAME_LEN} chars"
+            )
 
         low = 2 + idx
         if low > 0xFF:
@@ -659,7 +691,9 @@ class Compose:
         self.inf(f"$ {shlex.join(full)}")
         rc = subprocess.run(full).returncode
         if check and rc != 0:
-            raise PrivilegedCommandError(f"command failed with status {rc}: {shlex.join(full)}")
+            raise PrivilegedCommandError(
+                f"command failed with status {rc}: {shlex.join(full)}"
+            )
         return rc
 
     def _network_up(self, net: Network, apps_on_net: list[App]) -> None:
@@ -694,7 +728,9 @@ class Compose:
                     net.bridge_iface,
                 ]
             )
-            self._run_sudo(["ip", "link", "set", "dev", net.host_bridge_side_iface, "up"])
+            self._run_sudo(
+                ["ip", "link", "set", "dev", net.host_bridge_side_iface, "up"]
+            )
             self._run_sudo(["ip", "link", "set", "dev", net.host_veth_iface, "up"])
 
             host_v4 = net.host_ipv4()
@@ -762,7 +798,7 @@ class Compose:
 
         auto = self._auto_config(ctx, app)
         effective = auto | {
-            k: (_qstring(v) if isinstance(v, str) and v != 'y' else v)
+            k: (_qstring(v) if isinstance(v, str) and v != "y" else v)
             for k, v in app.extra_build_config.items()
         }
 
@@ -956,7 +992,9 @@ class Compose:
             results[app.name] = reap(app)
 
         for app in apps:
-            t = threading.Thread(target=worker, args=(app,), daemon=True, name=f"run-{app.name}")
+            t = threading.Thread(
+                target=worker, args=(app,), daemon=True, name=f"run-{app.name}"
+            )
             t.start()
             threads.append(t)
 
@@ -1006,7 +1044,9 @@ class Compose:
             return 1
 
         if shutil.which("picocom") is None:
-            self.err(f"picocom not installed. PTY is at: {pty} - attach with your preferred tool.")
+            self.err(
+                f"picocom not installed. PTY is at: {pty} - attach with your preferred tool."
+            )
             return 1
 
         os.execvp("picocom", ["picocom", "-q", pty])
@@ -1020,7 +1060,9 @@ class Compose:
         rc_total = 0
         for app in apps:
             if not app.ipv4:
-                self.err(f"application {app.name!r} has no IPv4 address; attach-usb requires one.")
+                self.err(
+                    f"application {app.name!r} has no IPv4 address; attach-usb requires one."
+                )
                 rc_total = 1
                 continue
             try:

@@ -30,6 +30,7 @@ def _write(tmp_path: Path, content: str, name: str = "zcompose.yml") -> Path:
 
 # ---------------------------------------------------------------- slugify
 
+
 @pytest.mark.parametrize(
     "raw,expected",
     [
@@ -45,25 +46,32 @@ def test_slugify(raw: str, expected: str) -> None:
 
 
 def test_empty_slug_rejected(tmp_path: Path) -> None:
-    p = _write(tmp_path, """
+    p = _write(
+        tmp_path,
+        """
         name: "---"
         applications:
           a:
             source: .
-    """)
+    """,
+    )
     with pytest.raises(ConfigError, match="slugifies to empty"):
         load_config(p)
 
 
 # ---------------------------------------------------------------- minimal
 
+
 def test_minimal_config(tmp_path: Path) -> None:
-    p = _write(tmp_path, """
+    p = _write(
+        tmp_path,
+        """
         name: Minimal
         applications:
           solo:
             source: ./my-app
-    """)
+    """,
+    )
     cfg = load_config(p)
     assert cfg.name == "Minimal"
     assert cfg.slug == "minimal"
@@ -81,8 +89,11 @@ def test_minimal_config(tmp_path: Path) -> None:
 
 # ---------------------------------------------------------------- substitution
 
+
 def test_substitution_across_apps(tmp_path: Path) -> None:
-    p = _write(tmp_path, """
+    p = _write(
+        tmp_path,
+        """
         name: Echo
         networks:
           zeth:
@@ -101,7 +112,8 @@ def test_substitution_across_apps(tmp_path: Path) -> None:
                 NET_CONFIG_PEER_IPV4_ADDR: ${server:ipv4}
                 NET_CONFIG_PEER_IPV6_ADDR: ${server:ipv6}
                 NET_CONFIG_PEER_MAC:       ${server:mac}
-    """)
+    """,
+    )
     cfg = load_config(p)
     client = cfg.apps["client"]
     assert client.extra_build_config["NET_CONFIG_PEER_IPV4_ADDR"] == "192.0.2.2"
@@ -110,7 +122,9 @@ def test_substitution_across_apps(tmp_path: Path) -> None:
 
 
 def test_substitution_in_extra_run_args(tmp_path: Path) -> None:
-    p = _write(tmp_path, """
+    p = _write(
+        tmp_path,
+        """
         name: Run args
         networks:
           zeth:
@@ -125,13 +139,16 @@ def test_substitution_in_extra_run_args(tmp_path: Path) -> None:
             extra-run:
               args:
                 - --peer=${server:ipv4}
-    """)
+    """,
+    )
     cfg = load_config(p)
     assert cfg.apps["client"].extra_run_args == ["--peer=192.0.2.2"]
 
 
 def test_substitution_unknown_app(tmp_path: Path) -> None:
-    p = _write(tmp_path, """
+    p = _write(
+        tmp_path,
+        """
         name: Bad ref
         applications:
           a:
@@ -139,13 +156,16 @@ def test_substitution_unknown_app(tmp_path: Path) -> None:
             extra-build:
               config:
                 FOO: ${nope:ipv4}
-    """)
+    """,
+    )
     with pytest.raises(ConfigError, match="unknown application 'nope'"):
         load_config(p)
 
 
 def test_substitution_unsupported_property(tmp_path: Path) -> None:
-    p = _write(tmp_path, """
+    p = _write(
+        tmp_path,
+        """
         name: Bad prop
         networks:
           zeth:
@@ -157,14 +177,17 @@ def test_substitution_unsupported_property(tmp_path: Path) -> None:
             extra-build:
               config:
                 FOO: ${a:bogus}
-    """)
+    """,
+    )
     with pytest.raises(ConfigError, match="unsupported property 'bogus'"):
         load_config(p)
 
 
 def test_substitution_missing_value(tmp_path: Path) -> None:
     # App `a` has no ipv6 (network explicitly disables it) → ${a:ipv6} unresolvable.
-    p = _write(tmp_path, """
+    p = _write(
+        tmp_path,
+        """
         name: Missing
         networks:
           zeth:
@@ -179,15 +202,19 @@ def test_substitution_missing_value(tmp_path: Path) -> None:
             extra-build:
               config:
                 FOO: ${a:ipv6}
-    """)
+    """,
+    )
     with pytest.raises(ConfigError, match="has no ipv6 configured"):
         load_config(p)
 
 
 # ---------------------------------------------------------------- allocation
 
+
 def test_allocation_two_apps_on_bridge_with_host_veth(tmp_path: Path) -> None:
-    p = _write(tmp_path, """
+    p = _write(
+        tmp_path,
+        """
         name: Echo
         networks:
           zeth:
@@ -201,7 +228,8 @@ def test_allocation_two_apps_on_bridge_with_host_veth(tmp_path: Path) -> None:
           client:
             source: .
             network: zeth
-    """)
+    """,
+    )
     cfg = load_config(p)
     net = cfg.networks["zeth"]
 
@@ -223,7 +251,9 @@ def test_allocation_two_apps_on_bridge_with_host_veth(tmp_path: Path) -> None:
 
 
 def test_default_subnets_when_unspecified(tmp_path: Path) -> None:
-    p = _write(tmp_path, """
+    p = _write(
+        tmp_path,
+        """
         name: Defaulted
         networks:
           zeth:
@@ -232,7 +262,8 @@ def test_default_subnets_when_unspecified(tmp_path: Path) -> None:
           a:
             source: .
             network: zeth
-    """)
+    """,
+    )
     cfg = load_config(p)
     net = cfg.networks["zeth"]
     assert str(net.ipv4_subnet) == DEFAULT_IPV4_SUBNET
@@ -241,7 +272,9 @@ def test_default_subnets_when_unspecified(tmp_path: Path) -> None:
 
 
 def test_false_disables_addressing(tmp_path: Path) -> None:
-    p = _write(tmp_path, """
+    p = _write(
+        tmp_path,
+        """
         name: V4only
         networks:
           zeth:
@@ -251,14 +284,17 @@ def test_false_disables_addressing(tmp_path: Path) -> None:
           a:
             source: .
             network: zeth
-    """)
+    """,
+    )
     cfg = load_config(p)
     assert cfg.networks["zeth"].ipv6_subnet is None
     assert cfg.apps["a"].ipv6 == ""
 
 
 def test_allocation_without_host_veth(tmp_path: Path) -> None:
-    p = _write(tmp_path, """
+    p = _write(
+        tmp_path,
+        """
         name: Noveth
         networks:
           net1:
@@ -267,7 +303,8 @@ def test_allocation_without_host_veth(tmp_path: Path) -> None:
           one:
             source: .
             network: net1
-    """)
+    """,
+    )
     cfg = load_config(p)
     net = cfg.networks["net1"]
     assert net.bridge_iface == "net1"
@@ -278,7 +315,9 @@ def test_allocation_without_host_veth(tmp_path: Path) -> None:
 
 
 def test_allocation_multiple_networks_independent(tmp_path: Path) -> None:
-    p = _write(tmp_path, """
+    p = _write(
+        tmp_path,
+        """
         name: Multi
         networks:
           neta:
@@ -295,7 +334,8 @@ def test_allocation_multiple_networks_independent(tmp_path: Path) -> None:
           a2:
             source: .
             network: neta
-    """)
+    """,
+    )
     cfg = load_config(p)
     assert cfg.apps["a1"].iface == "netatap0"
     assert cfg.apps["a2"].iface == "netatap1"
@@ -307,7 +347,9 @@ def test_allocation_multiple_networks_independent(tmp_path: Path) -> None:
 
 def test_network_name_too_long_rejected(tmp_path: Path) -> None:
     long_name = "a" * (MAX_NET_NAME_LEN + 1)
-    p = _write(tmp_path, f"""
+    p = _write(
+        tmp_path,
+        f"""
         name: Long
         networks:
           {long_name}:
@@ -316,57 +358,73 @@ def test_network_name_too_long_rejected(tmp_path: Path) -> None:
           x:
             source: .
             network: {long_name}
-    """)
+    """,
+    )
     with pytest.raises(ConfigError, match="exceeds"):
         load_config(p)
 
 
 # ---------------------------------------------------------------- schema errors
 
+
 def test_missing_name(tmp_path: Path) -> None:
-    p = _write(tmp_path, """
+    p = _write(
+        tmp_path,
+        """
         applications:
           a:
             source: .
-    """)
+    """,
+    )
     with pytest.raises(ConfigError, match="top-level `name` is required"):
         load_config(p)
 
 
 def test_missing_applications(tmp_path: Path) -> None:
-    p = _write(tmp_path, """
+    p = _write(
+        tmp_path,
+        """
         name: Empty
-    """)
+    """,
+    )
     with pytest.raises(ConfigError, match="`applications` must contain"):
         load_config(p)
 
 
 def test_unknown_top_level_key(tmp_path: Path) -> None:
-    p = _write(tmp_path, """
+    p = _write(
+        tmp_path,
+        """
         name: Bad
         applications:
           a:
             source: .
         bogus: 1
-    """)
+    """,
+    )
     with pytest.raises(ConfigError, match="unknown key.*bogus"):
         load_config(p)
 
 
 def test_unknown_app_key(tmp_path: Path) -> None:
-    p = _write(tmp_path, """
+    p = _write(
+        tmp_path,
+        """
         name: Bad
         applications:
           a:
             source: .
             mystery: 1
-    """)
+    """,
+    )
     with pytest.raises(ConfigError, match="unknown key.*mystery"):
         load_config(p)
 
 
 def test_unknown_network_key(tmp_path: Path) -> None:
-    p = _write(tmp_path, """
+    p = _write(
+        tmp_path,
+        """
         name: Bad
         networks:
           zeth:
@@ -374,13 +432,16 @@ def test_unknown_network_key(tmp_path: Path) -> None:
         applications:
           a:
             source: .
-    """)
+    """,
+    )
     with pytest.raises(ConfigError, match="unknown key.*mystery"):
         load_config(p)
 
 
 def test_unsupported_network_type(tmp_path: Path) -> None:
-    p = _write(tmp_path, """
+    p = _write(
+        tmp_path,
+        """
         name: Bad type
         networks:
           zeth:
@@ -388,13 +449,16 @@ def test_unsupported_network_type(tmp_path: Path) -> None:
         applications:
           a:
             source: .
-    """)
+    """,
+    )
     with pytest.raises(ConfigError, match="unsupported type"):
         load_config(p)
 
 
 def test_unknown_network_reference(tmp_path: Path) -> None:
-    p = _write(tmp_path, """
+    p = _write(
+        tmp_path,
+        """
         name: Bad ref
         networks:
           zeth:
@@ -403,13 +467,16 @@ def test_unknown_network_reference(tmp_path: Path) -> None:
           a:
             source: .
             network: nope
-    """)
+    """,
+    )
     with pytest.raises(ConfigError, match="unknown network 'nope'"):
         load_config(p)
 
 
 def test_invalid_cidr(tmp_path: Path) -> None:
-    p = _write(tmp_path, """
+    p = _write(
+        tmp_path,
+        """
         name: Bad cidr
         networks:
           zeth:
@@ -417,21 +484,25 @@ def test_invalid_cidr(tmp_path: Path) -> None:
         applications:
           a:
             source: .
-    """)
+    """,
+    )
     with pytest.raises(ConfigError, match="invalid CIDR"):
         load_config(p)
 
 
 def test_bad_types(tmp_path: Path) -> None:
     # extra-build.args must be a list of strings.
-    p = _write(tmp_path, """
+    p = _write(
+        tmp_path,
+        """
         name: Bad
         applications:
           a:
             source: .
             extra-build:
               args: "string not list"
-    """)
+    """,
+    )
     with pytest.raises(ConfigError, match="must be a list of strings"):
         load_config(p)
 
@@ -439,20 +510,25 @@ def test_bad_types(tmp_path: Path) -> None:
 def test_relative_path_resolution(tmp_path: Path) -> None:
     sub = tmp_path / "sub"
     sub.mkdir()
-    (sub / "zcompose.yml").write_text(textwrap.dedent("""
+    (sub / "zcompose.yml").write_text(
+        textwrap.dedent("""
         name: Rel
         applications:
           a:
             source: ./here
-    """))
+    """)
+    )
     cfg = load_config(sub / "zcompose.yml")
     assert cfg.apps["a"].source == (sub / "here").resolve()
 
 
 # ---------------------------------------------------------------- YAML anchors
 
+
 def test_yaml_anchors_and_merge_keys(tmp_path: Path) -> None:
-    p = _write(tmp_path, """
+    p = _write(
+        tmp_path,
+        """
         name: Anchor merge
         .common: &common
           NET_CONFIG_NEED_IPV6: n
@@ -464,7 +540,8 @@ def test_yaml_anchors_and_merge_keys(tmp_path: Path) -> None:
               config:
                 <<: *common
                 EXTRA_KEY: 1
-    """)
+    """,
+    )
     cfg = load_config(p)
     cfg_map = cfg.apps["one"].extra_build_config
     assert cfg_map["NET_CONFIG_NEED_IPV6"] == "n"
