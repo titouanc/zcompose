@@ -1,48 +1,42 @@
 # zcompose
 
 Orchestrate multiple [Zephyr](https://www.zephyrproject.org/) applications on your
-machine, `docker compose`-style.
+machine, inspired by `docker compose`.
 
-A single YAML file describes a group of Zephyr applications and the virtual
+A single `zcompse.yml` file describes a group of Zephyr applications and the virtual
 networks they share. `zcompose` then builds them, wires up the host networking,
-runs them together and tears everything down again — so you can develop and test
-multi-node Zephyr setups (a server and a client, a gateway and sensors, …)
+runs them together and tears everything down againn, so you can develop and test
+multi-node Zephyr setups (a server and a client, a gateway and sensors, ...)
 entirely on your laptop using `native_sim` or an emulator such as QEMU.
 
 ## Features
 
-- **Declarative**: describe applications, networks and build options in one
-  `zcompose.yml`.
-- **Virtual networking**: creates Linux bridges, TAP interfaces and (optionally)
-  a host-side veth so the host can talk to the simulated nodes.
-- **Automatic addressing**: each network-attached app gets a deterministic MAC,
-  IPv4 and IPv6 address, injected into its Kconfig automatically.
-- **Cross-references**: refer to another app's address with `${app:prop}`
-  substitution (e.g. point a client at its server).
-- **Parallel builds** with a per-app progress bar.
-- **Aggregated, color-prefixed output** when running several apps at once.
+- **Declarative**: describe applications, networks and build options in one `zcompose.yml`.
+- **Virtual networking**: creates Linux bridges, TAP interfaces and (optionally) a host-side veth so the host can talk to the simulated nodes.
+- **Automatic addressing**: each network-attached app gets a deterministic MAC, IPv4 and IPv6 address, injected into its Kconfig automatically.
+- **Cross-references**: refer to another app's address with `${app:prop}` substitution
+- **Parallel builds** your apps (and yes, they have progress bars)
+- **Aggregated output** of all your apps in a single place
 
 ## Requirements
 
-- Python ≥ 3.10
-- A working [Zephyr development environment](https://docs.zephyrproject.org/latest/develop/getting_started/index.html)
-  with `west` on your `PATH`.
+- Python >= 3.10
+- A working [Zephyr development environment](https://docs.zephyrproject.org/latest/develop/getting_started/index.html) with `west` on your `PATH`.
 - Linux, with `sudo` access to `ip` (used to manage bridges/TAP/veth interfaces).
 - Optional: `picocom` (for `console`), `usbip` (for `attach-usb`).
 
 ## Installation
 
-```console
-pip install .
+```bash
+pip install git+https://github.com/titouanc/zcompose
 ```
-
-This installs the `zcompose` command. (Versioning is handled by
-`setuptools-scm`, so install from a git checkout.)
 
 ## Quick start
 
 Create a `zcompose.yml` file to describe your applications and their networks.
-Read more on the [configuration file format](docs/config-file.md). For example:
+Read more on the [configuration file format](docs/config-file.md).
+
+Here is a short example:
 
 ```yaml
 name: Echo demo
@@ -70,7 +64,7 @@ applications:
 
 Then:
 
-```console
+```bash
 # Inspect the resolved configuration (addresses, interfaces, status)
 zcompose show
 
@@ -106,12 +100,12 @@ it with `-f/--file`.
 
 Global options:
 
-- `-f, --file FILE` — path to the compose file (default `./zcompose.yml`).
-- `-p, --pristine` — pristine build (`west build -p always`).
+- `-f, --file FILE`: path to the compose file (default `./zcompose.yml`).
+- `-p, --pristine`: pristine build (`west build -p always`).
 
 ## Development
 
-```console
+```bash
 pip install -e .
 pip install pytest ruff
 pytest          # run the test suite

@@ -1,14 +1,14 @@
 # Contributing to zcompose
 
-Thanks for your interest in improving `zcompose`! Contributions of all kinds
+Thanks for your interest in improving `zcompose` ! Contributions of all kinds
 (bug reports, fixes, documentation, new features, ...) are welcome.
 
 ## Pull request workflow
 
-We use the standard GitHub Pull Request workflow:
+Contributions to zcompose are made using the standard GitHub Pull Request workflow:
 
 1. **Fork** the repository and create a topic branch off `main`.
-2. **Make your changes** in focused, logically separated commits.
+2. **Make your changes**  logically separated commits.
 3. **Test and lint** locally before submitting:
 
    ```console
@@ -16,15 +16,15 @@ We use the standard GitHub Pull Request workflow:
    pip install pytest ruff
    pytest          # run the test suite
    ruff check .    # lint
+   ruff format .   # code formatting
+
+   # Alternatively, use pre-commit to automatically check your changes on commit
+   pip install pre-commit
+   pre-commit install
    ```
 
 4. **Open a pull request** against `main`. Describe what the change does and why,
    and link any relevant issues if applicable.
-5. A maintainer will review your PR. Address review feedback by pushing
-   additional commits to the same branch.
-
-Please keep PRs reasonably small and self-contained — they are easier to review
-and faster to merge.
 
 ## Commit messages
 
@@ -59,9 +59,9 @@ Assisted-by: Claude Code:claude-opus-4-8
 Assisted-by: GitHub Copilot:gpt-5
 ```
 
-Do **not** list ordinary development tools (git, gcc, make, your editor, …) in
+Do **not** list ordinary development tools (git, gcc, make, your editor, ...) in
 this trailer. Add one trailer per assisting agent, at the end of the commit
-message alongside any other trailers (`Signed-off-by`, `Co-authored-by`, …).
+message alongside any other trailers (`Signed-off-by`, `Co-authored-by`, ...).
 
 ### Your responsibility as a contributor
 
@@ -80,8 +80,8 @@ contribution you submit.** By opening a pull request you assert that:
   properly licensed.
 
 AI tools are an aid, not a substitute for your own judgement. Submissions that
-appear to be unreviewed AI output — incorrect, untested, or not understood by
-the author — will be rejected.
+appear to be unreviewed AI output (incorrect, untested, or not understood by
+the author) will be rejected.
 
 ## License
 
