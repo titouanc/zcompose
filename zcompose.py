@@ -798,7 +798,7 @@ class Compose:
 
         auto = self._auto_config(ctx, app)
         effective = auto | {
-            k: (_qstring(v) if isinstance(v, str) and v != "y" else v)
+            k: (_qstring(v) if isinstance(v, str) and v not in {"y", "n"} else v)
             for k, v in app.extra_build_config.items()
         }
 
