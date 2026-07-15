@@ -121,6 +121,10 @@ class App:
     ipv4_cidr: str = ""  # "a.b.c.d/<prefix>"
     ipv6_cidr: str = ""
 
+    @property
+    def base_board(self) -> str:
+        return self.board.split("/")[0]
+
     @cached_property
     def colorcode(self) -> str:
         hashed = int(hashlib.md5(self.name.encode()).hexdigest(), 16)
@@ -823,7 +827,7 @@ class Compose:
             return out
         net = ctx.config.networks[app.network]
 
-        if app.board == "native_sim":
+        if app.base_board == "native_sim":
             out["ETH_NATIVE_TAP_DRV_NAME"] = _qstring(app.iface)
             if app.mac:
                 out["ETH_NATIVE_TAP_RANDOM_MAC"] = "n"
@@ -938,7 +942,7 @@ class Compose:
 
     def _run_command(self, ctx: Context, app: App) -> list[str]:
         """Render the run command for an application."""
-        if app.board == "native_sim":
+        if app.base_board == "native_sim":
             exe = ctx.build_dir(app) / "zephyr" / "zephyr.exe"
             return [str(exe), *app.extra_run_args]
         return ["west", "build", "-t", "run", "-d", str(ctx.build_dir(app))]
