@@ -95,6 +95,7 @@ it with `-f/--file`.
 | `run [APP]` | Build then run all apps (or one), streaming their output. Requires `up` first. |
 | `clean [APP]` | Run `west build -t clean` for all apps or one. |
 | `menuconfig APP` | Open `menuconfig` for one app's build. |
+| `debug APP` | Launch `west debug` for one app's build. |
 | `console APP` | Attach a serial console (`picocom`) to a running app's PTY. |
 | `attach-usb [APP]` | Attach a remote USB device over USB/IP to the app(s). |
 
