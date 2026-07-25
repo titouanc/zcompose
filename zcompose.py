@@ -638,6 +638,7 @@ _SUBCOMMANDS = (
     "menuconfig",
     "attach-usb",
     "console",
+    "debug",
 )
 
 
@@ -680,6 +681,7 @@ class Compose:
             "menuconfig": self.action_menuconfig,
             "attach-usb": self.action_attach_usb,
             "console": self.action_console,
+            "debug": self.action_debug,
         }
         app = getattr(args, "app", None)
         try:
@@ -1205,6 +1207,18 @@ class Compose:
         self.inf(f"$ {shlex.join(cmd)}")
         return subprocess.run(cmd).returncode
 
+    def action_debug(self, ctx: Context, *, app: str | None = None) -> int:
+        if app is None or app not in ctx.config.apps:
+            self.err("debug requires a valid application name")
+            return 1
+        a = ctx.config.apps[app]
+        if not ctx.build_dir(a).is_dir():
+            self.err(f"no build dir for {app!r} - run `zcompose build {app}` first.")
+            return 1
+        cmd = ["west", "debug", "-d", str(ctx.build_dir(a))]
+        self.inf(f"$ {shlex.join(cmd)}")
+        return subprocess.run(cmd).returncode
+
     def action_attach_usb(self, ctx: Context, *, app: str | None = None) -> int:
         targets = self._select_apps(ctx.config, app)
         return self._attach_apps(ctx, targets)
@@ -1242,7 +1256,7 @@ def build_parser() -> argparse.ArgumentParser:
         sp = sub.add_parser(name, help=f"`zcompose {name}`")
         if name in ("build", "run", "clean", "attach-usb"):
             sp.add_argument("app", nargs="?", help="application name (optional)")
-        elif name in ("menuconfig", "console"):
+        elif name in ("menuconfig", "console", "debug"):
             sp.add_argument("app", help="application name")
     return parser
 
