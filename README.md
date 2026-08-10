@@ -97,11 +97,30 @@ it with `-f/--file`.
 | `menuconfig APP` | Open `menuconfig` for one app's build. |
 | `console APP` | Attach a serial console (`picocom`) to a running app's PTY. |
 | `attach-usb [APP]` | Attach a remote USB device over USB/IP to the app(s). |
+| `completion SHELL` | Print a completion script for `bash`, `zsh` or `fish`. |
 
 Global options:
 
 - `-f, --file FILE`: path to the compose file (default `./zcompose.yml`).
 - `-p, --pristine`: pristine build (`west build -p always`).
+
+## Shell completion
+
+`zcompose` can complete its subcommands, flags and (once you're inside a
+project) application names, straight from your `zcompose.yml`.
+
+```bash
+# Bash: for the current session
+source <(zcompose completion bash)
+# Bash: persistently (needs the `bash-completion` package)
+zcompose completion bash | sudo tee /etc/bash_completion.d/zcompose > /dev/null
+
+# Zsh: persistently, in a directory already on your $fpath
+zcompose completion zsh > "${fpath[1]}/_zcompose"
+
+# Fish: persistently, autoloaded, nothing to source
+zcompose completion fish > ~/.config/fish/completions/zcompose.fish
+```
 
 ## Development
 
